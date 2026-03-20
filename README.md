@@ -1,52 +1,125 @@
-ASCII Donut C++ (3D Torus Renderer)
+# main.cpp
 
-This project is a C++ implementation of the famous Donut.c algorithm. It renders a rotating 3D torus (donut) directly in the terminal using only ASCII characters and standard mathematical functions.
-Technical Overview
+A terminal 3D torus renderer in C++. A spinning ASCII donut rendered directly in the console — no libraries, no GPU, no dependencies.
 
-The program simulates a three-dimensional object by calculating the coordinates of points on a torus and projecting them onto a two-dimensional grid (the terminal window). It handles depth through a Z-buffer and shading through a light-source vector calculation.
-Key Features
+```
+         $$$$$$$
+      $$$$$$$$$$$$$$
+    $$$$$$!!*##$$$$$$$
+   $$$$$!*#@@@#*!$$$$$$
+  $$$$$$*@@@@@@@*!$$$$$$$
+  $$$$$!#@@@@@@@#!!$$$$$$
+  $$$$$$*#@@@@@#*!$$$$$$$
+   $$$$$$!!*##*!!$$$$$$$
+    $$$$$$$$$$$$$$$$$$
+      $$$$$$$$$$$$
+```
 
-    Pure Mathematics: No external graphical libraries (OpenGL, DirectX) are required. All rendering is done via trigonometric functions.
+## How it works
 
-    Dynamic Scaling: The code automatically detects terminal dimensions and adjusts the donut's position and scale to remain centered.
+### 1. Torus geometry
 
-    Z-Buffering: A depth-testing algorithm ensures that closer parts of the donut correctly obscure the parts behind them.
+The torus is built parametrically using two angles:
 
-    Luminance Shading: Surface normals are calculated to determine light intensity, mapped to a character set from low to high density.
+- `theta` (0..2π) — angle around the tube cross-section (inner circle)
+- `phi` (0..2π) — angle around the torus axis (outer circle)
 
-    Cross-Platform: Compatible with Windows (via windows.h) and Linux/macOS (via sys/ioctl.h).
+A point on the surface before rotation:
+```
+circleX = R + r·cos(θ)   // R=2, r=1 — torus radii
+circleY = r·sin(θ)
+```
 
-The Mathematics of the Donut
+### 2. Rotation matrices
 
-The project uses the parametric equation for a torus:
-x=(R1+R2cosθ)cosϕ
-y=(R1+R2cosθ)sinϕ
-z=R2sinθ
+Two animation angles `a` (pitch) and `b` (yaw) produce the final 3D coordinates via a combined rotation matrix around the X and Z axes.
 
-To project these points onto the screen:
+### 3. Perspective projection
 
-    The points are rotated around the X and Z axes using rotation matrices.
+```
+ooz = 1 / z          // inverse depth (perspective divide)
+xp  = cx + k·ooz·x  // screen X
+yp  = cy - k·ooz·y  // screen Y (Y-axis inverted)
+```
 
-    The 3D coordinates (x,y,z) are projected into 2D (xp,yp) using a perspective projection formula:
-    xp=center_x+K1⋅zx​
+### 4. Z-buffer
 
-    Light intensity L is calculated using the dot product of the surface normal and a predefined light vector. This value L maps to the character string ".,-~:;=!*#$@".
+Before writing a character, `ooz > zbuffer[idx]` is checked. The closest fragment wins — standard depth test.
 
-Compilation and Usage
-Prerequisites
+### 5. Lighting
 
-    A C++ compiler (g++, clang, or MSVC).
+The dot product of the surface normal and the light vector gives luminance `L`. A character is selected from the gradient:
 
-    A terminal supporting ANSI escape sequences (modern CMD, PowerShell, iTerm, or Bash).
+```
+. , - ~ : ; = ! * # $ @
+```
 
-Linux and macOS
-Bash
+Darkest to brightest.
 
-g++ main.cpp -o donut
+### 6. Render loop
+
+Each frame:
+1. `output` and `zbuffer` are cleared
+2. All torus points are computed
+3. Cursor is moved to `(0,0)` via `\x1b[H` — no flicker from `clear`
+4. Buffer is flushed to `stdout`
+5. Angles advance: `a += 0.05`, `b += 0.03`
+6. `sleep(30ms)`
+
+## Build & run
+
+```bash
+# GCC / Clang
+g++ -O2 -o donut donut.cpp
 ./donut
 
-Windows
-Bash
+# MSVC (Windows)
+cl /O2 donut.cpp
+donut.exe
+```
 
-g++ main.cpp -o donut.exe
-./donut.exe
+Requirements: C++11 or later. No external dependencies.
+
+## Parameters (hardcoded)
+
+| Parameter | Value | Description |
+|---|---|---|
+| `donut_scale` | `15.0f` | Projection scale |
+| `theta` step | `0.07` | Tube detail |
+| `phi` step | `0.02` | Revolution detail |
+| `a` increment | `0.05` | Pitch speed |
+| `b` increment | `0.03` | Yaw speed |
+| Frame delay | `30 ms` | ~33 FPS |
+
+## Compatibility
+
+| Platform | Status |
+|---|---|
+| Linux / macOS | ✓ (`ioctl` + `TIOCGWINSZ`) |
+| Windows | ✓ (`GetConsoleScreenBufferInfo`) |
+
+Terminal size is queried dynamically every frame — the render adapts when the window is resized.
+
+## Code structure
+
+```
+donut.cpp
+├── Platform detection (_WIN32 / POSIX)
+├── Animation loop
+│   ├── Terminal size detection
+│   ├── Buffer init (output, zbuffer)
+│   ├── Double loop over theta/phi
+│   │   ├── Point rotation (matrices a, b)
+│   │   ├── Perspective projection
+│   │   ├── Z-test
+│   │   └── Character write by luminance
+│   ├── Frame output
+│   └── sleep(30ms)
+```
+
+## Ideas for extension
+
+- Colored output via ANSI escape codes (256 colors / truecolor)
+- Keyboard-controlled rotation speed
+- Render other primitives — sphere, cube, Clifford torus
+- Frame export to file for GIF generation
